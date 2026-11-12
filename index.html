@@ -89,6 +89,13 @@
                     <label class="block font-bold text-slate-700 text-sm">ยิงบาร์โค้ด / พิมพ์:</label>
                     <input type="text" id="input-barcode" placeholder="ยิงบาร์โค้ดที่นี่..." class="w-full border-2 border-slate-300 rounded-xl px-3 py-2 text-sm font-mono focus:border-red-600 focus:outline-none" onkeydown="if(event.key==='Enter'){processBarcode(this.value);}">
                 </div>
+
+                <!-- Bulk Input (ช่องใส่หลายๆ บรรทัดที่เคยหายไป) -->
+                <div class="space-y-1.5 pt-2 border-t">
+                    <label class="block font-bold text-slate-700 text-sm">📋 นำเข้าบาร์โค้ดทีละหลายรายการ (วางหลายบรรทัด):</label>
+                    <textarea id="bulk-barcode-input" rows="3" placeholder="วางเลขบาร์โค้ดหลายๆ บรรทัดที่นี่..." class="w-full border-2 border-slate-300 rounded-xl p-2 text-xs font-mono bg-slate-50 focus:bg-white focus:border-red-600 focus:outline-none"></textarea>
+                    <button type="button" onclick="processBulkBarcodes()" class="w-full bg-red-700 hover:bg-red-800 text-white font-bold py-2 rounded-xl text-xs transition">⚡ บันทึกบาร์โค้ดทั้งหมดพร้อมกัน</button>
+                </div>
             </div>
 
             <div class="lg:col-span-6 bg-white p-5 rounded-xl shadow-md border space-y-4 flex flex-col">
@@ -102,7 +109,7 @@
 
                 <div id="last-scan-status" class="rounded-xl border-2 p-3 text-sm text-center font-bold bg-slate-50">พร้อมสแกน</div>
 
-                <div class="overflow-x-auto rounded-lg border max-h-[150px]">
+                <div class="overflow-x-auto rounded-lg border max-h-[140px]">
                     <table class="w-full text-left border-collapse text-xs">
                         <thead>
                             <tr class="bg-slate-100 border-b sticky top-0">
@@ -120,7 +127,7 @@
                         <h3 class="font-bold text-slate-800 text-xs">📋 รายการที่สแกน (แก้ไขประเภทได้ทันที)</h3>
                         <button onclick="deleteLastScanRecord()" class="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded text-[11px]">↩️ ลบรายการล่าสุด</button>
                     </div>
-                    <div class="overflow-y-auto max-h-[170px] border rounded-lg">
+                    <div class="overflow-y-auto max-h-[150px] border rounded-lg">
                         <table class="w-full text-left border-collapse text-xs">
                             <thead class="bg-slate-100 sticky top-0 border-b">
                                 <tr>
@@ -186,7 +193,7 @@
             </div>
         </section>
 
-        <!-- TYPES MANAGEMENT (เพิ่ม/ลด/แก้ไขประเภทงาน) -->
+        <!-- TYPES MANAGEMENT -->
         <section id="view-types" class="space-y-6 hidden">
             <div class="bg-white p-5 rounded-xl shadow-md border space-y-4">
                 <div class="flex justify-between items-center border-b pb-3">
@@ -222,7 +229,7 @@
     <!-- MODAL ROUTE -->
     <div id="route-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-3">
-            <h3 class="text-lg font-bold text-red-700 border-b pb-2">เพิ่ม/แก้ไข สายขนส่ง</h3>
+            <h3 class="text-lg font-bold text-red-700 border-b pb-2">เพิ่มสายขนส่ง</h3>
             <form onsubmit="saveRouteData(event)" class="space-y-3">
                 <input type="hidden" id="route-edit-id">
                 <div><label class="block font-bold text-sm mb-1">ชื่อสาย:</label><input type="text" id="modal-route-name" required class="w-full border rounded p-2 text-sm font-bold"></div>
@@ -232,7 +239,7 @@
         </div>
     </div>
 
-    <!-- MODAL TYPE (เพิ่ม/แก้ไขประเภทงาน) -->
+    <!-- MODAL TYPE -->
     <div id="type-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 space-y-3">
             <h3 id="type-modal-title" class="text-lg font-bold text-red-700 border-b pb-2">เพิ่มประเภทงาน</h3>
@@ -247,9 +254,29 @@
     <!-- JavaScript Application Logic -->
     <script>
         const defaultRoutes = [
-            { id: "r1", name: "สายทับสะแก", destinations: [{ name: "ทับสะแก", postal: "77130" }, { name: "กุยบุรี", postal: "77150" }, { name: "ประจวบคีรีขันธ์", postal: "77000" }] },
-            { id: "r2", name: "สายหัวหิน", destinations: [{ name: "หัวหิน", postal: "77110" }] },
-            { id: "r23", name: "สายราชบุรี", destinations: [{ name: "ราชบุรี", postal: "70000" }] }
+            { id: "r1", name: "สายทับสะแก", destinations: [{ name: "ทับสะแก", postal: "77130" }, { name: "กุยบุรี", postal: "77150" }, { name: "ประจวบคีรีขันธ์", postal: "77000" }, { name: "อ่าวน้อย", postal: "77210" }] },
+            { id: "r2", name: "สายหัวหิน", destinations: [{ name: "หัวหิน", postal: "77110" }, { name: "ชายหาดหัวหิน", postal: "77111" }] },
+            { id: "r3", name: "สายบางสะพานน้อย", destinations: [{ name: "บางสะพานน้อย", postal: "77170" }, { name: "บางสะพาน", postal: "77140" }, { name: "บ้านกรูด", postal: "77190" }, { name: "ร่อนทอง", postal: "77230" }] },
+            { id: "r4", name: "สายสามร้อยยอด", destinations: [{ name: "สามร้อยยอด", postal: "77180" }, { name: "ธนะรัชต์", postal: "77160" }, { name: "ปราณบุรี", postal: "77120" }, { name: "ปากน้ำปราณบุรี", postal: "77220" }] },
+            { id: "r5", name: "สายสมุทรสงคราม", destinations: [{ name: "สมุทรสงคราม", postal: "75000" }, { name: "อัมพวา", postal: "75110" }, { name: "บางคนที", postal: "75120" }] },
+            { id: "r6", name: "สายเพชรบุรี", destinations: [{ name: "เพชรบุรี", postal: "76000" }, { name: "บ้านแหลม", postal: "76110" }, { name: "หาดเจ้าสำราญ", postal: "76100" }] },
+            { id: "r7", name: "สายบ้านลาด", destinations: [{ name: "บ้านลาด", postal: "76150" }, { name: "แก่งกระจาน", postal: "76170" }, { name: "หนองหญ้าปล้อง", postal: "76160" }, { name: "เขาย้อย", postal: "76140" }] },
+            { id: "r8", name: "สายชะอำ", destinations: [{ name: "ชะอำ", postal: "76120" }, { name: "ท่ายาง", postal: "76130" }, { name: "ชายหาดชะอำ", postal: "76121" }] },
+            { id: "r9", name: "สายสุพรรณบุรี", destinations: [{ name: "สุพรรณบุรี", postal: "72000" }, { name: "ท่าเสด็จ", postal: "72230" }, { name: "สวนแตง", postal: "72210" }, { name: "ดอนเจดีย์", postal: "72170" }] },
+            { id: "r10", name: "สายเดิมบางนางบวช", destinations: [{ name: "เดิมบางนางบวช", postal: "72120" }, { name: "สามชุก", postal: "72130" }, { name: "ศรีประจันต์", postal: "72140" }] },
+            { id: "r11", name: "สายบางปลาม้า", destinations: [{ name: "บางปลาม้า", postal: "72150" }, { name: "สองพี่น้อง", postal: "72110" }, { name: "ทุ่งคอก", postal: "72190" }] },
+            { id: "r12", name: "สายอู่ทอง", destinations: [{ name: "อู่ทอง", postal: "72160" }, { name: "ด่านช้าง", postal: "72180" }, { name: "สระยายโสม", postal: "72220" }] },
+            { id: "r13", name: "สายหนองหญ้าไซ", destinations: [{ name: "หนองหญ้าไซ", postal: "72240" }, { name: "สระกระโจม", postal: "72250" }] },
+            { id: "r14", name: "สายกาญจนบุรี", destinations: [{ name: "กาญจนบุรี", postal: "71000" }, { name: "ไทรโยค", postal: "71150" }, { name: "บ่อพลอย", postal: "71160" }, { name: "ลาดหญ้า", postal: "71190" }, { name: "เลาขวัญ", postal: "71210" }, { name: "หนองปรือ", postal: "71220" }, { name: "ท่ากระดาน", postal: "71250" }, { name: "ด่านมะขามเตี้ย", postal: "71260" }] },
+            { id: "r15", name: "สายตลาดเขต", destinations: [{ name: "ตลาดเขต", postal: "71170" }, { name: "ท่าม่วง", postal: "71110" }, { name: "พนมทวน", postal: "71140" }] },
+            { id: "r16", name: "สายท่าเรือพระแท่น", destinations: [{ name: "ท่าเรือพระแท่น", postal: "71130" }, { name: "ท่ามะกา", postal: "71120" }, { name: "ลูกแก", postal: "71121" }] },
+            { id: "r17", name: "สายสังขละบุรี", destinations: [{ name: "สังขละบุรี", postal: "71240" }, { name: "ทองผาภูมิ", postal: "71180" }] },
+            { id: "r18", name: "สายวัดเพลง", destinations: [{ name: "วัดเพลง", postal: "70170" }, { name: "ปากท่อ", postal: "70140" }, { name: "โพธาราม", postal: "70120" }] },
+            { id: "r19", name: "สายหลักห้า", destinations: [{ name: "หลักห้า", postal: "70210" }, { name: "ดำเนินสะดวก", postal: "70130" }, { name: "บางแพ", postal: "70160" }] },
+            { id: "r20", name: "สายสวนผึ้ง", destinations: [{ name: "สวนผึ้ง", postal: "70180" }, { name: "จอมบึง", postal: "70150" }] },
+            { id: "r21", name: "สายบ้านโป่ง", destinations: [{ name: "บ้านโป่ง", postal: "70110" }, { name: "หัวโป่ง", postal: "70111" }] },
+            { id: "r22", name: "สายห้วยกระบอก", destinations: [{ name: "ห้วยกระบอก", postal: "70190" }] },
+            { id: "r23", name: "สายราชบุรี", destinations: [{ name: "ราชบุรี", postal: "70000" }, { name: "ราชบุรี DB1", postal: "70701" }] }
         ];
         const defaultTypes = ["EV", "SCB", "ทอง", "สลากผู้พิการ", "สลาก(ผวจ.)", "ปข.7", "คลังสินค้า(บธ.)"];
 
@@ -259,8 +286,7 @@
         let selectedPrintRoutes = new Set();
         let activeRecordDate = new Date().toISOString().split('T')[0];
 
-        // --- ซิงค์ข้อมูลกับ Server ท้องถิ่น Real-time ---
-        async function fetchRecordsFromSever() {
+        async function fetchRecordsFromServer() {
             try {
                 const res = await fetch('/api/records');
                 const data = await res.json();
@@ -270,7 +296,7 @@
                 renderHistoryTable();
             } catch (e) {}
         }
-        setInterval(fetchRecordsFromSever, 2000);
+        setInterval(fetchRecordsFromServer, 2000);
 
         function initializeApp() {
             document.getElementById('scan-page-date').value = activeRecordDate;
@@ -278,7 +304,7 @@
             renderTypeButtons();
             renderTypesTable();
             renderRoutesTable();
-            fetchRecordsFromSever();
+            fetchRecordsFromServer();
             initCamera();
             initOCR();
         }
@@ -305,12 +331,12 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newRec)
             });
-            fetchRecordsFromSever();
+            fetchRecordsFromServer();
         }
 
         async function deleteRecordFromServer(id) {
             await fetch(`/api/delete/${id}`, { method: 'DELETE' });
-            fetchRecordsFromSever();
+            fetchRecordsFromServer();
         }
 
         async function updateRecordType(id, newType) {
@@ -319,7 +345,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id, itemType: newType })
             });
-            fetchRecordsFromSever();
+            fetchRecordsFromServer();
         }
 
         function parseBarcode(rawClean) {
@@ -350,6 +376,36 @@
             setStatusMsg(`✅ บันทึก: ${clean} → <span class="text-red-700 font-bold">${matchedRoute}</span>`, true);
             document.getElementById('input-barcode').value = '';
             document.getElementById('input-barcode').focus();
+        }
+
+        function processBulkBarcodes() {
+            const bulkArea = document.getElementById('bulk-barcode-input');
+            const text = bulkArea.value.trim();
+            if (!text) return;
+            const lines = text.split(/[\r\n\s]+/).map(l => l.trim()).filter(Boolean);
+            const itemType = document.getElementById('input-type').value;
+            let count = 0;
+
+            lines.forEach(rawLine => {
+                const { clean, destPostal } = parseBarcode(rawLine);
+                if (destPostal.length === 5) {
+                    let matchedRoute = '', matchedDest = '';
+                    for (const r of routesData) {
+                        const d = r.destinations.find(x => x.postal === destPostal);
+                        if (d) { matchedRoute = r.name; matchedDest = d.name; break; }
+                    }
+                    if (matchedRoute) {
+                        const newRec = {
+                            id: 'rec_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+                            date: activeRecordDate, barcode: clean, destination: matchedDest, routeType: matchedRoute, itemType: itemType
+                        };
+                        saveRecordToServer(newRec);
+                        count++;
+                    }
+                }
+            });
+            bulkArea.value = '';
+            setStatusMsg(`✅ นำเข้าสำเร็จ ${count} รายการ`, true);
         }
 
         function setStatusMsg(html, ok) {
@@ -514,7 +570,7 @@
                         </table>
                         <div class="mt-2 font-bold">รวมทั้งสิ้น: ${routeRecords.length} ชิ้น</div>
 
-                        <!-- เพิ่มช่องเซ็นชื่อด้านล่างตามต้องการ -->
+                        <!-- เพิ่มช่องเซ็นชื่อ ผู้ส่งมอบ และ ผู้รับมอบ ตามต้องการ -->
                         <div class="mt-8 grid grid-cols-2 gap-8 text-base">
                             <div class="space-y-2 text-center">
                                 <div class="w-48 mx-auto border-b border-black pb-6"></div>
