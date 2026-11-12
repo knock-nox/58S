@@ -1,108 +1,617 @@
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-
-const PORT = 3000;
-const DB_FILE = path.join(__dirname, 'database.json');
-
-function loadDB() {
-    try {
-        if (fs.existsSync(DB_FILE)) {
-            return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ระบบสแกนบาร์โค้ดป้ายปากถุง ป.58 พิเศษ (Sync Server)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <!-- Tesseract OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+    <!-- Font TH Sarabun PSK -->
+    <link href="https://fonts.googleapis.com/css2?family=TH+Sarabun+PSK:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    <style>
+        @page { size: A4 portrait; margin: 8mm; }
+        @media print {
+            body { background: white !important; font-family: 'TH Sarabun PSK', sans-serif !important; font-size: 14pt !important; color: black !important; }
+            .no-print { display: none !important; }
+            .print-page { page-break-after: always; border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; width: 100% !important; max-width: 100% !important; font-size: 14pt !important; }
+            main { padding: 0 !important; margin: 0 !important; }
+            table { font-size: 14pt !important; }
+            th, td { padding: 4px 6px !important; }
         }
-    } catch (e) {}
-    return [];
-}
+        body { font-family: 'TH Sarabun PSK', sans-serif; font-size: 16pt; background-color: #f8fafc; color: #1e293b; }
+        .camera-box { position: relative; width: 100%; height: 320px; background: #000; border-radius: 12px; overflow: hidden; border: 2px solid #333; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        .scan-guide { z-index: 6; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 94%; height: 220px; border: 2px dashed #00ff66; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7); pointer-events: none; }
+        .num-box { position: absolute; left: 4%; width: 92%; top: 50%; height: 38%; border: 2px solid #00ff66; border-radius: 6px; background: rgba(0,255,102,0.06); }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans">
 
-function saveDB(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
-}
+    <!-- Top Header -->
+    <header class="bg-red-700 text-white shadow-md py-3 px-4 no-print">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <span class="text-3xl">📦</span>
+                <div>
+                    <h1 class="text-xl font-bold">ระบบสแกนบาร์โค้ดป้ายปากถุง ป.58 พิเศษ</h1>
+                    <p class="text-xs text-red-200">เชื่อมต่อเซิร์ฟเวอร์ท้องถิ่น (Local Network Sync)</p>
+                </div>
+            </div>
+            <div class="mt-2 md:mt-0 flex items-center space-x-3 text-sm">
+                <span id="current-date-time" class="bg-red-800 px-3 py-1 rounded-md"></span>
+            </div>
+        </div>
+    </header>
 
-const server = http.createServer((req, res) => {
-    const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-    
-    // API: ดึงข้อมูลทั้งหมด
-    if (parsedUrl.pathname === '/api/records' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify(loadDB()));
-        return;
-    }
+    <!-- Navigation Tabs -->
+    <nav class="bg-white shadow border-b sticky top-0 z-30 no-print">
+        <div class="max-w-7xl mx-auto px-4 flex flex-wrap gap-2 py-2">
+            <button onclick="switchTab('scanner')" id="tab-scanner" class="tab-btn px-3 py-1.5 rounded-lg font-bold text-sm bg-red-700 text-white transition">📷 หน้า 1: สแกน/กรอก</button>
+            <button onclick="switchTab('preview')" id="tab-preview" class="tab-btn px-3 py-1.5 rounded-lg font-bold text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 transition">🖨️ หน้า 2: ตัวอย่างก่อนพิมพ์</button>
+            <button onclick="switchTab('routes')" id="tab-routes" class="tab-btn px-3 py-1.5 rounded-lg font-bold text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 transition">⚙️ จัดการสายขนส่ง</button>
+            <button onclick="switchTab('types')" id="tab-types" class="tab-btn px-3 py-1.5 rounded-lg font-bold text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 transition">🏷️ จัดการประเภทงาน</button>
+            <button onclick="switchTab('history')" id="tab-history" class="tab-btn px-3 py-1.5 rounded-lg font-bold text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 transition">📊 ประวัติรายวัน</button>
+        </div>
+    </nav>
 
-    // API: บันทึกข้อมูลใหม่
-    if (parsedUrl.pathname === '/api/records' && req.method === 'POST') {
-        let body = '';
-        req.on('data', chunk => { body += chunk; });
-        req.on('end', () => {
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full space-y-6">
+
+        <!-- PAGE 1: SCANNER -->
+        <section id="view-scanner" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-6 bg-white p-5 rounded-xl shadow-sm border space-y-4">
+                <div class="border-b pb-3 flex justify-between items-center">
+                    <h2 class="text-lg font-bold text-red-700">กล้องสแกนอัตโนมัติ</h2>
+                    <input type="date" id="scan-page-date" onchange="onScanDateChange(this.value)" class="border-2 rounded-lg p-1 text-sm font-bold bg-white">
+                </div>
+
+                <div class="camera-box">
+                    <video id="webcam" autoplay playsinline muted></video>
+                    <div class="scan-guide"><div class="num-box"></div></div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btnShot" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm shadow" disabled>📸 ถ่ายภาพ</button>
+                    <button id="btnScan" class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl text-sm shadow" disabled>⏳ กำลังโหลด...</button>
+                </div>
+                <div id="status" class="text-center text-xs font-bold text-amber-600">กำลังเปิดกล้อง...</div>
+
+                <!-- Item Type Selection -->
+                <div class="space-y-1.5 pt-2 border-t">
+                    <label class="block font-bold text-slate-700 text-sm">เลือกประเภทงาน:</label>
+                    <input type="text" id="input-type" value="EV" class="hidden">
+                    <div id="type-buttons" class="flex flex-wrap gap-1.5"></div>
+                </div>
+
+                <div class="space-y-1.5 pt-2 border-t">
+                    <label class="block font-bold text-slate-700 text-sm">ยิงบาร์โค้ด / พิมพ์:</label>
+                    <input type="text" id="input-barcode" placeholder="ยิงบาร์โค้ดที่นี่..." class="w-full border-2 border-slate-300 rounded-xl px-3 py-2 text-sm font-mono focus:border-red-600 focus:outline-none" onkeydown="if(event.key==='Enter'){processBarcode(this.value);}">
+                </div>
+            </div>
+
+            <div class="lg:col-span-6 bg-white p-5 rounded-xl shadow-md border space-y-4 flex flex-col">
+                <div class="flex justify-between items-center border-b pb-2">
+                    <div>
+                        <h2 class="text-lg font-bold text-red-700">สรุปยอดแยกตามสาย (วันนี้)</h2>
+                        <p class="text-xs text-slate-500">ซิงค์ข้อมูลผ่านเซิร์ฟเวอร์กลางเรียลไทม์</p>
+                    </div>
+                    <span id="scan-count-badge" class="bg-red-100 text-red-800 font-bold px-2.5 py-0.5 rounded-full text-xs">0 รายการ</span>
+                </div>
+
+                <div id="last-scan-status" class="rounded-xl border-2 p-3 text-sm text-center font-bold bg-slate-50">พร้อมสแกน</div>
+
+                <div class="overflow-x-auto rounded-lg border max-h-[150px]">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-100 border-b sticky top-0">
+                                <th class="p-2 w-12 text-center">ลำดับ</th>
+                                <th class="p-2">สายขนส่ง</th>
+                                <th class="p-2 text-center">จำนวนชิ้น</th>
+                            </tr>
+                        </thead>
+                        <tbody id="live-scanned-table-body" class="divide-y"></tbody>
+                    </table>
+                </div>
+
+                <div class="space-y-1.5 flex-grow">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-bold text-slate-800 text-xs">📋 รายการที่สแกน (แก้ไขประเภทได้ทันที)</h3>
+                        <button onclick="deleteLastScanRecord()" class="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded text-[11px]">↩️ ลบรายการล่าสุด</button>
+                    </div>
+                    <div class="overflow-y-auto max-h-[170px] border rounded-lg">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="bg-slate-100 sticky top-0 border-b">
+                                <tr>
+                                    <th class="p-1.5 w-8 text-center">#</th>
+                                    <th class="p-1.5">บาร์โค้ด</th>
+                                    <th class="p-1.5">ประเภท</th>
+                                    <th class="p-1.5">สายขนส่ง</th>
+                                    <th class="p-1.5 w-10 text-center">ลบ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="today-scanned-items-body" class="divide-y"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="flex justify-between pt-2 border-t">
+                    <button onclick="clearTodayScans()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs">ล้างรายการวันนี้</button>
+                    <button onclick="switchTab('preview')" class="bg-red-700 hover:bg-red-800 text-white font-bold px-3 py-1.5 rounded-lg shadow text-xs">ไปหน้าพิมพ์รายงาน ➡️</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- PAGE 2: PRINT PREVIEW -->
+        <section id="view-preview" class="space-y-6 hidden">
+            <div class="bg-white p-5 rounded-xl shadow-md border space-y-4 no-print">
+                <div class="flex justify-between items-center border-b pb-3">
+                    <div>
+                        <h2 class="text-xl font-bold text-red-700">หน้า 2: ตัวอย่างก่อนพิมพ์ ป.58 (พร้อมช่องเซ็นชื่อ)</h2>
+                        <p class="text-xs text-slate-600">เลือกสายขนส่งที่ต้องการพิมพ์</p>
+                    </div>
+                    <input type="date" id="print-date" onchange="renderPrintPreview()" class="border rounded-lg p-1.5 text-sm font-bold bg-white">
+                </div>
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center text-sm">
+                        <label class="font-bold text-slate-700">เลือกสายขนส่ง:</label>
+                        <div class="space-x-2">
+                            <button onclick="toggleSelectAllRoutes(true)" class="text-xs bg-slate-100 px-2 py-1 rounded font-bold">เลือกทั้งหมด</button>
+                            <button onclick="toggleSelectAllRoutes(false)" class="text-xs bg-slate-100 px-2 py-1 rounded font-bold">ล้างเลือก</button>
+                        </div>
+                    </div>
+                    <div id="route-summary-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2"></div>
+                </div>
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button onclick="window.print()" class="bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow text-sm">🖨️ สั่งพิมพ์เอกสาร ป.58</button>
+                </div>
+            </div>
+            <div id="printable-area" class="space-y-6"></div>
+        </section>
+
+        <!-- ROUTES MANAGEMENT -->
+        <section id="view-routes" class="space-y-6 hidden">
+            <div class="bg-white p-5 rounded-xl shadow-md border space-y-4">
+                <div class="flex justify-between items-center border-b pb-3">
+                    <h2 class="text-xl font-bold text-red-700">จัดการสายขนส่ง</h2>
+                    <button onclick="openRouteModal()" class="bg-red-700 text-white font-bold py-1.5 px-3 rounded-lg text-sm">➕ เพิ่มสายใหม่</button>
+                </div>
+                <div class="overflow-x-auto rounded-lg border">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead><tr class="bg-slate-100 border-b"><th class="p-2.5">ชื่อสาย</th><th class="p-2.5">ปลายทาง & รหัสไปรษณีย์</th><th class="p-2.5 text-center w-20">ลบ</th></tr></thead>
+                        <tbody id="routes-table-body" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TYPES MANAGEMENT (เพิ่ม/ลด/แก้ไขประเภทงาน) -->
+        <section id="view-types" class="space-y-6 hidden">
+            <div class="bg-white p-5 rounded-xl shadow-md border space-y-4">
+                <div class="flex justify-between items-center border-b pb-3">
+                    <h2 class="text-xl font-bold text-red-700">จัดการประเภทงาน</h2>
+                    <button onclick="openTypeModal()" class="bg-red-700 text-white font-bold py-1.5 px-3 rounded-lg text-sm">➕ เพิ่มประเภทใหม่</button>
+                </div>
+                <div class="overflow-x-auto rounded-lg border">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead><tr class="bg-slate-100 border-b"><th class="p-3">ชื่อประเภทงาน</th><th class="p-3 text-center w-24">จัดการ</th></tr></thead>
+                        <tbody id="types-table-body" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- HISTORY -->
+        <section id="view-history" class="space-y-6 hidden">
+            <div class="bg-white p-5 rounded-xl shadow-md border space-y-4">
+                <div class="flex justify-between items-center border-b pb-3">
+                    <h2 class="text-xl font-bold text-red-700">ประวัติย้อนหลัง</h2>
+                    <input type="date" id="history-filter-date" onchange="renderHistoryTable()" class="border rounded p-1 text-sm font-bold">
+                </div>
+                <div class="overflow-x-auto rounded-lg border">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead><tr class="bg-slate-100 border-b"><th class="p-2">วันที่</th><th class="p-2">บาร์โค้ด</th><th class="p-2">ประเภท</th><th class="p-2">สายขนส่ง</th><th class="p-2 text-center">ลบ</th></tr></thead>
+                        <tbody id="history-table-body" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- MODAL ROUTE -->
+    <div id="route-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-3">
+            <h3 class="text-lg font-bold text-red-700 border-b pb-2">เพิ่ม/แก้ไข สายขนส่ง</h3>
+            <form onsubmit="saveRouteData(event)" class="space-y-3">
+                <input type="hidden" id="route-edit-id">
+                <div><label class="block font-bold text-sm mb-1">ชื่อสาย:</label><input type="text" id="modal-route-name" required class="w-full border rounded p-2 text-sm font-bold"></div>
+                <div><label class="block font-bold text-sm mb-1">ปลายทาง:รหัส (บรรทัดละ 1 ปลายทาง):</label><textarea id="modal-destinations" rows="4" required class="w-full border rounded p-2 font-mono text-xs"></textarea></div>
+                <div class="flex justify-end space-x-2 pt-2"><button type="button" onclick="closeRouteModal()" class="bg-slate-200 px-4 py-2 rounded text-sm font-bold">ยกเลิก</button><button type="submit" class="bg-red-700 text-white px-5 py-2 rounded text-sm font-bold">บันทึก</button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL TYPE (เพิ่ม/แก้ไขประเภทงาน) -->
+    <div id="type-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 space-y-3">
+            <h3 id="type-modal-title" class="text-lg font-bold text-red-700 border-b pb-2">เพิ่มประเภทงาน</h3>
+            <form onsubmit="saveTypeData(event)" class="space-y-3">
+                <input type="hidden" id="type-old-name">
+                <div><label class="block font-bold text-sm mb-1">ชื่อประเภท:</label><input type="text" id="modal-type-name" required class="w-full border rounded p-2 text-sm font-bold"></div>
+                <div class="flex justify-end space-x-2 pt-2"><button type="button" onclick="closeTypeModal()" class="bg-slate-200 px-4 py-2 rounded text-sm font-bold">ยกเลิก</button><button type="submit" class="bg-red-700 text-white px-5 py-2 rounded text-sm font-bold">บันทึก</button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        const defaultRoutes = [
+            { id: "r1", name: "สายทับสะแก", destinations: [{ name: "ทับสะแก", postal: "77130" }, { name: "กุยบุรี", postal: "77150" }, { name: "ประจวบคีรีขันธ์", postal: "77000" }] },
+            { id: "r2", name: "สายหัวหิน", destinations: [{ name: "หัวหิน", postal: "77110" }] },
+            { id: "r23", name: "สายราชบุรี", destinations: [{ name: "ราชบุรี", postal: "70000" }] }
+        ];
+        const defaultTypes = ["EV", "SCB", "ทอง", "สลากผู้พิการ", "สลาก(ผวจ.)", "ปข.7", "คลังสินค้า(บธ.)"];
+
+        let routesData = JSON.parse(localStorage.getItem('p58_routes')) || defaultRoutes;
+        let typesData = JSON.parse(localStorage.getItem('p58_types')) || defaultTypes;
+        let recordsData = [];
+        let selectedPrintRoutes = new Set();
+        let activeRecordDate = new Date().toISOString().split('T')[0];
+
+        // --- ซิงค์ข้อมูลกับ Server ท้องถิ่น Real-time ---
+        async function fetchRecordsFromSever() {
             try {
-                const newRecord = JSON.parse(body);
-                const records = loadDB();
-                records.push(newRecord);
-                saveDB(records);
-                res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-                res.end(JSON.stringify({ success: true }));
-            } catch (err) {
-                res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-                res.end(JSON.stringify({ success: false }));
-            }
-        });
-        return;
-    }
+                const res = await fetch('/api/records');
+                const data = await res.json();
+                recordsData = data;
+                renderLiveScannedTable();
+                renderRouteSummaryGrid();
+                renderHistoryTable();
+            } catch (e) {}
+        }
+        setInterval(fetchRecordsFromSever, 2000);
 
-    // API: แก้ไขประเภทงานของรายการที่สแกนแล้ว
-    if (parsedUrl.pathname === '/api/update-type' && req.method === 'POST') {
-        let body = '';
-        req.on('data', chunk => { body += chunk; });
-        req.on('end', () => {
+        function initializeApp() {
+            document.getElementById('scan-page-date').value = activeRecordDate;
+            document.getElementById('print-date').value = activeRecordDate;
+            renderTypeButtons();
+            renderTypesTable();
+            renderRoutesTable();
+            fetchRecordsFromSever();
+            initCamera();
+            initOCR();
+        }
+        document.addEventListener('DOMContentLoaded', initializeApp);
+
+        function onScanDateChange(val) { if (val) { activeRecordDate = val; renderLiveScannedTable(); } }
+
+        function renderTypeButtons() {
+            const container = document.getElementById('type-buttons');
+            const currentType = document.getElementById('input-type').value;
+            container.innerHTML = typesData.map(t => `
+                <button type="button" onclick="setType('${t}')" class="type-btn px-2.5 py-1.5 rounded-lg font-bold text-xs border-2 transition ${currentType === t ? 'bg-red-700 text-white border-red-700' : 'bg-white text-slate-700 border-slate-200'}">${t}</button>
+            `).join('');
+        }
+
+        function setType(val) {
+            document.getElementById('input-type').value = val;
+            renderTypeButtons();
+        }
+
+        async function saveRecordToServer(newRec) {
+            await fetch('/api/records', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newRec)
+            });
+            fetchRecordsFromSever();
+        }
+
+        async function deleteRecordFromServer(id) {
+            await fetch(`/api/delete/${id}`, { method: 'DELETE' });
+            fetchRecordsFromSever();
+        }
+
+        async function updateRecordType(id, newType) {
+            await fetch(`/api/update-type`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, itemType: newType })
+            });
+            fetchRecordsFromSever();
+        }
+
+        function parseBarcode(rawClean) {
+            const digits = rawClean.replace(/\D/g, '');
+            const destPostal = digits.length >= 5 ? digits.slice(-5) : '';
+            return { clean: rawClean.trim(), destPostal };
+        }
+
+        function processBarcode(raw) {
+            if (!raw.trim()) return;
+            const { clean, destPostal } = parseBarcode(raw);
+            if (destPostal.length !== 5) { setStatusMsg('❌ รหัสไปรษณีย์ปลายทางไม่ครบ 5 หลัก', false); return; }
+
+            let matchedRoute = '', matchedDest = '';
+            for (const r of routesData) {
+                const d = r.destinations.find(x => x.postal === destPostal);
+                if (d) { matchedRoute = r.name; matchedDest = d.name; break; }
+            }
+            if (!matchedRoute) { setStatusMsg('❌ ไม่พบสายขนส่งสำหรับรหัส ' + destPostal, false); return; }
+
+            const itemType = document.getElementById('input-type').value;
+            const newRec = {
+                id: 'rec_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                date: activeRecordDate, barcode: clean, destination: matchedDest, routeType: matchedRoute, itemType: itemType
+            };
+
+            saveRecordToServer(newRec);
+            setStatusMsg(`✅ บันทึก: ${clean} → <span class="text-red-700 font-bold">${matchedRoute}</span>`, true);
+            document.getElementById('input-barcode').value = '';
+            document.getElementById('input-barcode').focus();
+        }
+
+        function setStatusMsg(html, ok) {
+            const el = document.getElementById('last-scan-status');
+            el.className = 'rounded-xl border-2 p-3 text-sm text-center font-bold shadow-sm ' + (ok ? 'border-green-500 bg-green-50 text-green-900' : 'border-red-500 bg-red-50 text-red-900');
+            el.innerHTML = html;
+        }
+
+        // --- กล้อง & OCR ---
+        const video = document.getElementById('webcam');
+        let worker, scanning = false;
+        async function initCamera() {
             try {
-                const { id, itemType } = JSON.parse(body);
-                let records = loadDB();
-                records = records.map(r => r.id === id ? { ...r, itemType } : r);
-                saveDB(records);
-                res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-                res.end(JSON.stringify({ success: true }));
-            } catch (err) {
-                res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-                res.end(JSON.stringify({ success: false }));
-            }
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                video.srcObject = stream;
+                await video.play();
+                document.getElementById('btnScan').disabled = false;
+                document.getElementById('btnShot').disabled = false;
+                document.getElementById('status').innerText = "พร้อมสแกน";
+            } catch (e) { document.getElementById('status').innerText = "❌ เปิดกล้องไม่ได้"; }
+        }
+        async function initOCR() {
+            worker = await Tesseract.createWorker('eng');
+            await worker.setParameters({ tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ ' });
+        }
+        document.getElementById('btnScan').addEventListener('click', () => {
+            scanning = !scanning;
+            document.getElementById('btnScan').innerText = scanning ? "⏹ หยุด" : "▶️ สแกนต่อเนื่อง";
+            if (scanning) runScanLoop();
         });
-        return;
-    }
-
-    // API: ลบข้อมูล
-    if (parsedUrl.pathname.startsWith('/api/delete/') && req.method === 'DELETE') {
-        const id = parsedUrl.pathname.split('/')[3];
-        let records = loadDB();
-        records = records.filter(r => r.id !== id);
-        saveDB(records);
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ success: true }));
-        return;
-    }
-
-    // เสิร์ฟไฟล์หน้าเว็บ (HTML)
-    let filePath = path.join(__dirname, parsedUrl.pathname === '/' ? 'index.html' : parsedUrl.pathname);
-    fs.readFile(filePath, (error, content) => {
-        if (error) {
-            res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end('<h1>ไม่พบไฟล์ (404)</h1>');
-        } else {
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(content, 'utf-8');
+        async function runScanLoop() {
+            if (!scanning) return;
+            try {
+                const cv = document.createElement('canvas');
+                cv.width = video.videoWidth; cv.height = video.videoHeight;
+                cv.getContext('2d').drawImage(video, 0, 0);
+                const res = await worker.recognize(cv);
+                if (res.data.text) processBarcode(res.data.text);
+            } catch (e) {}
+            if (scanning) setTimeout(runScanLoop, 1500);
         }
-    });
-});
+        document.getElementById('btnShot').addEventListener('click', async () => {
+            const cv = document.createElement('canvas');
+            cv.width = video.videoWidth; cv.height = video.videoHeight;
+            cv.getContext('2d').drawImage(video, 0, 0);
+            const res = await worker.recognize(cv);
+            if (res.data.text) processBarcode(res.data.text);
+        });
 
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 เซิร์ฟเวอร์กลางทำงานแล้ว!`);
-    console.log(`- เปิดบนคอมตัวเอง: http://localhost:${PORT}`);
-    
-    const { networkInterfaces } = require('os');
-    const nets = networkInterfaces();
-    for (const name of Object.keys(nets)) {
-        for (const net of nets[name]) {
-            if (net.family === 'IPv4' && !net.internal) {
-                console.log(`- เปิดจากมือถือ (Wi-Fi วงเดียวกัน): http://${net.address}:${PORT}`);
+        // --- เรนเดอร์หน้าจอ ---
+        function renderLiveScannedTable() {
+            const dateRecords = recordsData.filter(r => r.date === activeRecordDate);
+            document.getElementById('scan-count-badge').innerText = `${dateRecords.length} รายการ`;
+            
+            const counts = {};
+            routesData.forEach(r => counts[r.name] = 0);
+            dateRecords.forEach(r => counts[r.routeType] = (counts[r.routeType] || 0) + 1);
+            const active = routesData.filter(r => counts[r.name] > 0);
+
+            document.getElementById('live-scanned-table-body').innerHTML = active.length === 0 ? 
+                `<tr><td colspan="3" class="p-4 text-center text-slate-400">ยังไม่มีรายการวันนี้</td></tr>` :
+                active.map((r, i) => `<tr><td class="p-2 text-center">${i+1}</td><td class="p-2 font-bold text-red-700">${r.name}</td><td class="p-2 text-center font-bold">${counts[r.name]} ชิ้น</td></tr>`).join('');
+
+            document.getElementById('today-scanned-items-body').innerHTML = dateRecords.length === 0 ?
+                `<tr><td colspan="5" class="p-3 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>` :
+                [...dateRecords].reverse().map((rec, idx) => `
+                    <tr>
+                        <td class="p-1.5 text-center">${dateRecords.length - idx}</td>
+                        <td class="p-1.5 font-mono font-bold">${rec.barcode}</td>
+                        <td class="p-1.5">
+                            <select onchange="updateRecordType('${rec.id}', this.value)" class="border rounded px-1 py-0.5 text-xs font-bold bg-white text-blue-700">
+                                ${typesData.map(t => `<option value="${t}" ${rec.itemType === t ? 'selected' : ''}>${t}</option>`).join('')}
+                            </select>
+                        </td>
+                        <td class="p-1.5 font-bold text-red-700">${rec.routeType}</td>
+                        <td class="p-1.5 text-center"><button onclick="deleteRecordFromServer('${rec.id}')" class="text-red-600 font-bold">🗑️</button></td>
+                    </tr>
+                `).join('');
+        }
+
+        function deleteLastScanRecord() {
+            const list = recordsData.filter(r => r.date === activeRecordDate);
+            if (list.length > 0) deleteRecordFromServer(list[list.length - 1].id);
+        }
+        function clearTodayScans() {
+            if (confirm(`ลบรายการทั้งหมดของวันที่ ${activeRecordDate}?`)) {
+                recordsData.filter(r => r.date === activeRecordDate).forEach(r => deleteRecordFromServer(r.id));
             }
         }
-    }
-});
+
+        // --- พิมพ์รายงาน ป.58 พร้อมช่องเซ็นชื่อ ---
+        function renderRouteSummaryGrid() {
+            const grid = document.getElementById('route-summary-grid');
+            const dt = document.getElementById('print-date').value || activeRecordDate;
+            const dateRecords = recordsData.filter(r => r.date === dt);
+            const counts = {};
+            routesData.forEach(r => counts[r.name] = 0);
+            dateRecords.forEach(r => counts[r.routeType] = (counts[r.routeType] || 0) + 1);
+            const active = routesData.filter(r => counts[r.name] > 0);
+
+            grid.innerHTML = active.length === 0 ? `<div class="col-span-full p-3 text-center text-slate-500 font-bold">ไม่มีข้อมูลวันที่ ${dt}</div>` :
+                active.map(r => {
+                    const sel = selectedPrintRoutes.has(r.name);
+                    return `<div onclick="toggleRouteSelection('${r.name}')" class="cursor-pointer p-2 rounded-lg border-2 flex items-center justify-between ${sel ? 'border-red-600 bg-red-50' : 'border-slate-200 bg-white'}">
+                        <span class="font-bold text-xs">${r.name}</span><span class="text-xs bg-red-700 text-white px-2 py-0.5 rounded-full">${counts[r.name]} ชิ้น</span>
+                    </div>`;
+                }).join('');
+            renderPrintPreview();
+        }
+
+        function toggleSelectAllRoutes(sel) {
+            const dt = document.getElementById('print-date').value;
+            const active = [...new Set(recordsData.filter(r => r.date === dt).map(r => r.routeType))];
+            if (sel) active.forEach(r => selectedPrintRoutes.add(r)); else selectedPrintRoutes.clear();
+            renderRouteSummaryGrid();
+        }
+        function toggleRouteSelection(name) {
+            if (selectedPrintRoutes.has(name)) selectedPrintRoutes.delete(name); else selectedPrintRoutes.add(name);
+            renderRouteSummaryGrid();
+        }
+
+        function renderPrintPreview() {
+            const printArea = document.getElementById('printable-area');
+            const dt = document.getElementById('print-date').value;
+            const dateRecords = recordsData.filter(r => r.date === dt);
+            const routesList = Array.from(selectedPrintRoutes);
+
+            if (routesList.length === 0) {
+                printArea.innerHTML = `<div class="bg-white p-6 rounded-xl border text-center font-bold text-slate-500">⚠️ กรุณาเลือกสายขนส่งด้านบน</div>`;
+                return;
+            }
+
+            printArea.innerHTML = routesList.map(routeName => {
+                const routeRecords = dateRecords.filter(r => r.routeType === routeName);
+                if (routeRecords.length === 0) return '';
+                return `
+                    <div class="print-page bg-white p-6 rounded-xl shadow-md border mb-6 text-[14pt]">
+                        <div class="text-center font-bold text-xl">บัญชีมอบหมายถุงไปรษณีย์ในประเทศ (ป.58 พิเศษ)</div>
+                        <div class="text-right text-base font-bold mt-1">วันที่: ${dt}</div>
+                        <div class="text-base font-bold mt-1">จาก: ศป.รบ.(ชั่วคราว) | สายขนส่ง: ${routeName}</div>
+                        <table class="w-full text-left border-collapse border border-black mt-3 text-[14pt]">
+                            <thead>
+                                <tr class="bg-slate-200 border border-black text-center font-bold">
+                                    <th class="border border-black p-1 w-12">ลำดับ</th>
+                                    <th class="border border-black p-1">หมายเลข</th>
+                                    <th class="border border-black p-1">ต้นทาง</th>
+                                    <th class="border border-black p-1">ปลายทาง</th>
+                                    <th class="border border-black p-1 w-20">ประเภท</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${routeRecords.map((item, idx) => `
+                                    <tr class="border border-black h-8">
+                                        <td class="border border-black p-1 text-center font-bold">${idx + 1}</td>
+                                        <td class="border border-black p-1 font-mono font-bold">${item.barcode}</td>
+                                        <td class="border border-black p-1">ศป.รบ.</td>
+                                        <td class="border border-black p-1 font-bold">${item.destination}</td>
+                                        <td class="border border-black p-1 text-center font-bold">${item.itemType}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                        <div class="mt-2 font-bold">รวมทั้งสิ้น: ${routeRecords.length} ชิ้น</div>
+
+                        <!-- เพิ่มช่องเซ็นชื่อด้านล่างตามต้องการ -->
+                        <div class="mt-8 grid grid-cols-2 gap-8 text-base">
+                            <div class="space-y-2 text-center">
+                                <div class="w-48 mx-auto border-b border-black pb-6"></div>
+                                <p class="font-bold">ผู้ส่งมอบ</p>
+                                <p>วันที่: ........................................ เวลา: ........................</p>
+                            </div>
+                            <div class="space-y-2 text-center">
+                                <div class="w-48 mx-auto border-b border-black pb-6"></div>
+                                <p class="font-bold">ผู้รับมอบ</p>
+                                <p>วันที่: ........................................ เวลา: ........................</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // --- จัดการประเภทงาน ---
+        function renderTypesTable() {
+            document.getElementById('types-table-body').innerHTML = typesData.map(t => `
+                <tr>
+                    <td class="p-3 font-bold text-red-700">${t}</td>
+                    <td class="p-3 text-center space-x-1">
+                        <button onclick="openTypeModal('${t}')" class="bg-amber-600 text-white font-bold px-2 py-1 rounded text-xs">แก้ไข</button>
+                        <button onclick="deleteType('${t}')" class="bg-red-600 text-white font-bold px-2 py-1 rounded text-xs">ลบ</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        function openTypeModal(oldName = null) {
+            document.getElementById('type-modal').classList.remove('hidden');
+            document.getElementById('type-old-name').value = oldName || '';
+            document.getElementById('modal-type-name').value = oldName || '';
+            document.getElementById('type-modal-title').innerText = oldName ? 'แก้ไขประเภทงาน' : 'เพิ่มประเภทงานใหม่';
+        }
+        function closeTypeModal() { document.getElementById('type-modal').classList.add('hidden'); }
+        function saveTypeData(e) {
+            e.preventDefault();
+            const oldName = document.getElementById('type-old-name').value;
+            const newName = document.getElementById('modal-type-name').value.trim();
+            if (!newName) return;
+            if (oldName) {
+                typesData = typesData.map(t => t === oldName ? newName : t);
+            } else {
+                if (!typesData.includes(newName)) typesData.push(newName);
+            }
+            localStorage.setItem('p58_types', JSON.stringify(typesData));
+            closeTypeModal();
+            renderTypesTable();
+            renderTypeButtons();
+        }
+        function deleteType(name) {
+            if (typesData.length <= 1) { alert('ต้องมีประเภทงานเหลืออย่างน้อย 1 ประเภท'); return; }
+            if (confirm(`ลบประเภท "${name}" ?`)) {
+                typesData = typesData.filter(t => t !== name);
+                localStorage.setItem('p58_types', JSON.stringify(typesData));
+                renderTypesTable();
+                renderTypeButtons();
+            }
+        }
+
+        // --- จัดการสายขนส่ง & ประวัติ ---
+        function renderRoutesTable() {
+            document.getElementById('routes-table-body').innerHTML = routesData.map(r => `
+                <tr><td class="p-2.5 font-bold text-red-700">${r.name}</td><td class="p-2.5 text-xs">${r.destinations.map(d=>d.name).join(', ')}</td><td class="p-2.5 text-center"><button onclick="deleteRoute('${r.id}')" class="text-red-600 font-bold">🗑️</button></td></tr>
+            `).join('');
+        }
+        function openRouteModal() { document.getElementById('route-modal').classList.remove('hidden'); }
+        function closeRouteModal() { document.getElementById('route-modal').classList.add('hidden'); }
+        function saveRouteData(e) {
+            e.preventDefault();
+            const name = document.getElementById('modal-route-name').value.trim();
+            const dests = document.getElementById('modal-destinations').value.trim().split('\n').map(l => { const p = l.split(':'); return { name: p[0]?.trim(), postal: p[1]?.trim() }; }).filter(d => d.name && d.postal);
+            routesData.push({ id: 'r_'+Date.now(), name, destinations: dests });
+            localStorage.setItem('p58_routes', JSON.stringify(routesData));
+            closeRouteModal(); renderRoutesTable();
+        }
+        function deleteRoute(id) {
+            routesData = routesData.filter(r => r.id !== id);
+            localStorage.setItem('p58_routes', JSON.stringify(routesData));
+            renderRoutesTable();
+        }
+        function renderHistoryTable() {
+            const filter = document.getElementById('history-filter-date').value;
+            const list = filter ? recordsData.filter(r => r.date === filter) : recordsData;
+            document.getElementById('history-table-body').innerHTML = list.map(r => `
+                <tr><td class="p-2">${r.date}</td><td class="p-2 font-mono">${r.barcode}</td><td class="p-2">${r.itemType}</td><td class="p-2 font-bold text-red-700">${r.routeType}</td><td class="p-2 text-center"><button onclick="deleteRecordFromServer('${r.id}')">🗑️</button></td></tr>
+            `).join('');
+        }
+
+        function switchTab(tab) {
+            ['scanner', 'preview', 'routes', 'types', 'history'].forEach(t => {
+                document.getElementById(`view-${t}`).classList.toggle('hidden', t !== tab);
+                document.getElementById(`tab-${t}`).className = `tab-btn px-3 py-1.5 rounded-lg font-bold text-sm transition ${t === tab ? 'bg-red-700 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`;
+            });
+            if (tab === 'preview') renderRouteSummaryGrid();
+        }
+    </script>
+</body>
+</html>
